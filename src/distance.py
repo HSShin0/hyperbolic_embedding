@@ -10,7 +10,7 @@ from typing import Tuple
 
 import torch
 
-DEBUG = True
+DEBUG = False
 
 
 class PoincareDistance(torch.autograd.Function):
@@ -71,7 +71,7 @@ class PoincareDistance(torch.autograd.Function):
         Args:
             alpha: (1 - |theta|**2)
             beta: (1 - |x|**2)
-            gamma: 1 + 2 * |theta - x|**2 / (alpha * beta) 
+            gamma: 1 + 2 * |theta - x|**2 / (alpha * beta)
 
         Return:
             partial derivative d(theta, x) w.r.t. `theta` of shape (N, d) (= theta.shape)
@@ -88,11 +88,7 @@ class PoincareDistance(torch.autograd.Function):
         )  # (N, 2)
         if DEBUG:
             for idx, tsr in enumerate([x_sq, c_theta, c_x, c_common, dtheta]):
-                if (
-                    torch.any(tsr == torch.inf)
-                    or torch.any(tsr == -torch.inf)
-                    or torch.any(tsr == torch.nan)
-                ):
+                if torch.any(torch.isinf(tsr)) or torch.any(torch.isnan(tsr)):
                     print(idx)
                     import pdb;pdb.set_trace()
         return dtheta

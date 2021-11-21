@@ -31,7 +31,8 @@ class Trainer:
         optimizer: "PoincareSGD",
         dataloader: "TaxonomiesDataset",
         config: Dict[str, Any],
-        wandb_run: Optional["Run"]=None,
+        wandb_run: Optional["Run"] = None,
+        device: torch.device = torch.device("cpu"),
     ) -> None:
         self.model = model
         self.distance = distance
@@ -39,6 +40,7 @@ class Trainer:
         self.optimizer = optimizer
         self.dataloader = dataloader
         self.wandb_run = wandb_run
+        self.device = device
 
         loss_ftn = nn.CrossEntropyLoss()
 
@@ -90,7 +92,9 @@ class Trainer:
             n_iter += 1
             pos, negs = batch["pos"], batch["negs"]
             u_v_neg_u = torch.cat([pos, negs], dim=-1)
-            embed_u_v_neg_u = self.model(u_v_neg_u)
+
+            self.model = self.model.to(self.device)
+            embed_u_v_neg_u = self.model(u_v_neg_u.to(self.device))
             u, v = (
                 embed_u_v_neg_u[:, 0:1],
                 embed_u_v_neg_u[:, 1:],
@@ -137,7 +141,7 @@ class Trainer:
             )
             return dist_flat.reshape(N, N)
 
-        dist_mat = compute_distance(W)
+        dist_mat = compute_distance(W).cpu()
 
         # Change distance between the same node "d(u,u)" = 0 -> huge number
         dist_mat.diagonal(0).fill_(1e12)
