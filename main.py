@@ -10,8 +10,8 @@ Ref:
 
 import argparse
 
-# import wandb
 import torch.nn as nn
+import wandb
 from torch.utils.data import DataLoader
 
 from src.data import TaxonomiesDataset
@@ -60,11 +60,23 @@ def get_args() -> argparse.Namespace:
         default="exp/temp",
         help="Root dir for saving checkpoints.",
     )
+    parser.add_argument("--wlog", action="store_true", help="Use WanDB logger")
+    parser.add_argument(
+        "--wlog-name", type=str, default="", help="Run ID in WanDB logger."
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = get_args()
+    wandb_run = None
+    if args.wlog:
+        wandb_run = wandb.init(
+            project="hyperbolic-embedding", name=args.wlog_name, config=vars(args)
+        )
+        assert isinstance(
+            wandb_run, wandb.sdk.wandb_run.Run
+        ), "Failed initializing WanDB"
 
     dataset = TaxonomiesDataset(args.datapath, args.n_neg)
     # TODO: figure out the reason:
@@ -85,55 +97,7 @@ if __name__ == "__main__":
         optimizer=optimizer,
         dataloader=dataloader,
         config=vars(args),
+        wandb_run=wandb_run,
     )
 
     trainer.train()
-
-    """
-    for epoch in range(args.epochs):
-        total_loss = 0
-        pbar = tqdm(dataloader, desc=f"Epoch: {epoch}\tTrain Loss: {total_loss:.2f}")
-        n_iter = 0
-        for batch in pbar:
-            n_iter += 1
-            pos, negs = batch["pos"], batch["negs"]
-            # print(pos, negs)
-            # print(pos.shape, negs.shape)
-            u_v_neg_u = torch.cat([pos, negs], dim=-1)
-            embed_u_v_neg_u = model(u_v_neg_u)
-            # print(embed_u_v_neg_u.shape)
-            u, v = (
-                embed_u_v_neg_u[:, 0:1],
-                embed_u_v_neg_u[:, 1:],
-            )  # (N, 1, d), (N, 1 + n_neg, d)
-            u_expanded = u.expand_as(v)  # (N, 1 + n_neg, d)
-            batch_dist = distance.apply(
-                u_expanded.reshape(-1, args.emb_dim), v.reshape(-1, args.emb_dim), 1e-5
-            )  # (N * 1 + n_neg)
-
-            batch_dist = batch_dist.reshape(-1, 1 + args.n_neg)  # (N, 1 + n_neg)
-            # print(batch_dist.shape)
-            # negative batch dist as score for Cross-Entropy with `0` ground-truth label.
-            loss = loss_ftn(
-                -batch_dist,
-                torch.zeros(
-                    len(batch_dist), dtype=torch.long, device=batch_dist.device
-                ),
-            )
-            # compute euclid grad
-            loss.backward()
-            # Riemannian SGD for Poincare disk
-            optimizer.step()
-            # accumulate batch loss
-            total_loss += loss.item()
-            # Update progress bar description
-            pbar.set_description(
-                f"Epoch: {epoch}\tTrain Loss: {total_loss / n_iter:.2f}"
-            )
-        train_loss = total_loss / n_iter
-
-        # # for debugging
-        # mask = model.embed.weight.grad.abs().sum(-1) > 0
-        # print(torch.where(mask)[0])
-        # print(u_v_neg_u.reshape(-1).sort()[0])
-        """
