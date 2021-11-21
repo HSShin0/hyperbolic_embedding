@@ -10,6 +10,7 @@ Ref:
 
 import argparse
 
+import torch
 import torch.nn as nn
 import wandb
 from torch.utils.data import DataLoader
@@ -60,10 +61,13 @@ def get_args() -> argparse.Namespace:
         default="exp/temp",
         help="Root dir for saving checkpoints.",
     )
-    parser.add_argument("--wlog", action="store_true", help="Use WanDB logger")
+    parser.add_argument(
+        "--wlog", action="store_true", default=False, help="Use WanDB logger"
+    )
     parser.add_argument(
         "--wlog-name", type=str, default="", help="Run ID in WanDB logger."
     )
+    parser.add_argument("--use-gpu", action="store_true", default=False, help="Use GPU")
     return parser.parse_args()
 
 
@@ -77,10 +81,14 @@ if __name__ == "__main__":
         assert isinstance(
             wandb_run, wandb.sdk.wandb_run.Run
         ), "Failed initializing WanDB"
+    if args.use_gpu and torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
 
     dataset = TaxonomiesDataset(args.datapath, args.n_neg)
     # TODO: figure out the reason:
-    # setting `num_workers` > 0 make it slow
+    # setting `num_workers` > 0 makes it slow
     # See: https://discuss.pytorch.org/t/guidelines-for-assigning-num-workers-to-dataloader/813/23
     dataloader = DataLoader(dataset, args.batch_size, shuffle=True, num_workers=0)
 
@@ -98,6 +106,7 @@ if __name__ == "__main__":
         dataloader=dataloader,
         config=vars(args),
         wandb_run=wandb_run,
+        device=device,
     )
 
     trainer.train()
