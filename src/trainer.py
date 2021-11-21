@@ -4,7 +4,8 @@
  - Contact: shin.hyungseok@gmail.com
 """
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
+import os
 from tqdm import tqdm
 
 if TYPE_CHECKING:
@@ -12,6 +13,8 @@ if TYPE_CHECKING:
     from src.distance import PoincareDistance
     from src.models import BaseManifold
     from src.data import TaxonomiesDataset
+
+from sklearn.metrics import average_precision_score
 
 import torch
 import torch.nn as nn
@@ -35,19 +38,35 @@ class Trainer:
         self.dataloader = dataloader
 
         loss_ftn = nn.CrossEntropyLoss()
-        
+
         # Read configuration
         self.epochs = config["epochs"]
         self.eval_every = config["eval_every"]
         self.emb_dim = config["emb_dim"]
         self.n_neg = config["n_neg"]
+        self.exp_root = config["exp_root"]
+
+        # Evaluate "scores"
+        self.best_score = 0
 
     def train(self) -> None:
         for epoch in range(self.epochs):
+            self.model.train()
             avg_loss = self.train_one_epoch(epoch)
 
             if (epoch + 1) % self.eval_every == 0:
-                self.evaluate()
+                self.model.eval()
+                scores = self.evaluate()
+                score = scores["mAP"]  # or Use negative "mean_rank"
+                if score > self.best_score:
+                    self.best_score = score
+                    savepath = os.path.join(self.exp_root, "best.pt")
+                    additional_info = {
+                        "epoch": epoch,
+                        "best_score": self.best_score,
+                    }
+                    self.save_checkpoint(savepath, additional_info)
+                    print(f"Best model is saved in {savepath}")
 
     def train_one_epoch(self, epoch: int) -> float:
         total_loss = 0
@@ -91,8 +110,40 @@ class Trainer:
         train_loss = total_loss / n_iter
         return train_loss
 
-    def evaluate(self) -> None:
-        pass
+    @torch.no_grad()
+    def evaluate(self) -> Dict[str, float]:
+        """Evaluate via Mean Rank and Average Precision."""
+        adj_mat = self.dataloader.dataset.adj_mat
+        W = self.model.embed.weight
+        N, d = W.shape
+        def compute_distance(W: torch.Tensor) -> torch.Tensor:
+            W_src = W.unsqueeze(0).expand(N, N, d)  # (1, N, d) > (N, N, d)
+            W_tgt = W.unsqueeze(1).expand(N, N, d)  # (N, 1, d) > (N, N, d)
+            dist_flat = self.distance.apply(W_src.reshape(-1, d), W_tgt.reshape(-1, d), 1e-5)
+            return dist_flat.reshape(N, N)
+        dist_mat = compute_distance(W)
 
-    def save_checkpoint(self) -> None:
-        pass
+        # Change distance between the same node "d(u,u)" = 0 -> huge number
+        dist_mat.diagonal(0).fill_(1e+12)
+
+        APs = []
+        for adj, dist in zip(adj_mat, dist_mat):
+            y_true = 1 * (adj > 0) # 1 or 0
+            y_score = -dist
+            ap = average_precision_score(y_true, y_score)
+            APs.append(ap)
+        total_aps = torch.Tensor(APs)
+        # TODO: implement computation of Mean Rank
+        return {"mAP": total_aps.mean().item(), "mean_rank": 1}
+
+    def save_checkpoint(
+        self, savepath: str, additional_info: Optional[Dict[str, Any]] = None
+    ) -> None:
+        checkpoint = {
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+        }
+        if additional_info:
+            checkpoint.update(additional_info)
+        os.makedirs(os.path.dirname(savepath), exist_ok=True)
+        torch.save(checkpoint, savepath)

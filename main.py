@@ -54,6 +54,12 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--eval-every", type=int, default=5, help="Evaluate every `eval_every`-epochs."
     )
+    parser.add_argument(
+        "--exp-root",
+        type=str,
+        default="exp/temp",
+        help="Root dir for saving checkpoints.",
+    )
     return parser.parse_args()
 
 
@@ -61,7 +67,10 @@ if __name__ == "__main__":
     args = get_args()
 
     dataset = TaxonomiesDataset(args.datapath, args.n_neg)
-    dataloader = DataLoader(dataset, args.batch_size, shuffle=True, num_workers=10)
+    # TODO: figure out the reason:
+    # setting `num_workers` > 0 make it slow
+    # See: https://discuss.pytorch.org/t/guidelines-for-assigning-num-workers-to-dataloader/813/23
+    dataloader = DataLoader(dataset, args.batch_size, shuffle=True, num_workers=0)
 
     # Prepare Poincare Embedding model
     model = Poincare(dataset.n_words, args.emb_dim)
@@ -79,8 +88,6 @@ if __name__ == "__main__":
     )
 
     trainer.train()
-
-
 
     """
     for epoch in range(args.epochs):

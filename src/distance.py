@@ -16,8 +16,8 @@ DEBUG = True
 class PoincareDistance(torch.autograd.Function):
     """Distance in Poiincare disk."""
 
-    @staticmethod
     # TODO: see implementation of `Function` for `ctx`
+    @staticmethod
     def forward(ctx, u: torch.Tensor, v: torch.Tensor, eps: float) -> torch.Tensor:
         """Compute distance between u and v in Poincare disk.
 
