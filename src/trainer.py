@@ -4,8 +4,9 @@
  - Contact: shin.hyungseok@gmail.com
 """
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
 import os
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
 from tqdm import tqdm
 
 if TYPE_CHECKING:
@@ -13,11 +14,11 @@ if TYPE_CHECKING:
     from src.distance import PoincareDistance
     from src.models import BaseManifold
     from src.data import TaxonomiesDataset
-
-from sklearn.metrics import average_precision_score
+    from wandb.sdk.wandb_run import Run
 
 import torch
 import torch.nn as nn
+from sklearn.metrics import average_precision_score
 
 
 class Trainer:
@@ -30,12 +31,14 @@ class Trainer:
         optimizer: "PoincareSGD",
         dataloader: "TaxonomiesDataset",
         config: Dict[str, Any],
+        wandb_run: Optional["Run"]=None,
     ) -> None:
         self.model = model
         self.distance = distance
         self.loss_ftn = loss_ftn
         self.optimizer = optimizer
         self.dataloader = dataloader
+        self.wandb_run = wandb_run
 
         loss_ftn = nn.CrossEntropyLoss()
 
@@ -51,12 +54,18 @@ class Trainer:
 
     def train(self) -> None:
         for epoch in range(self.epochs):
+            epoch_log = {}
             self.model.train()
             avg_loss = self.train_one_epoch(epoch)
+            epoch_log["train_loss"] = avg_loss
 
             if (epoch + 1) % self.eval_every == 0:
                 self.model.eval()
                 scores = self.evaluate()
+                for k, v in scores.items():
+                    print(f"{k}:\t{v:.2f}")
+                epoch_log.update(scores)
+
                 score = scores["mAP"]  # or Use negative "mean_rank"
                 if score > self.best_score:
                     self.best_score = score
@@ -67,6 +76,9 @@ class Trainer:
                     }
                     self.save_checkpoint(savepath, additional_info)
                     print(f"Best model is saved in {savepath}")
+
+            if self.wandb_run:
+                self.wandb_run.log(epoch_log)
 
     def train_one_epoch(self, epoch: int) -> float:
         total_loss = 0
@@ -116,19 +128,23 @@ class Trainer:
         adj_mat = self.dataloader.dataset.adj_mat
         W = self.model.embed.weight
         N, d = W.shape
+
         def compute_distance(W: torch.Tensor) -> torch.Tensor:
             W_src = W.unsqueeze(0).expand(N, N, d)  # (1, N, d) > (N, N, d)
             W_tgt = W.unsqueeze(1).expand(N, N, d)  # (N, 1, d) > (N, N, d)
-            dist_flat = self.distance.apply(W_src.reshape(-1, d), W_tgt.reshape(-1, d), 1e-5)
+            dist_flat = self.distance.apply(
+                W_src.reshape(-1, d), W_tgt.reshape(-1, d), 1e-5
+            )
             return dist_flat.reshape(N, N)
+
         dist_mat = compute_distance(W)
 
         # Change distance between the same node "d(u,u)" = 0 -> huge number
-        dist_mat.diagonal(0).fill_(1e+12)
+        dist_mat.diagonal(0).fill_(1e12)
 
         APs = []
         for adj, dist in zip(adj_mat, dist_mat):
-            y_true = 1 * (adj > 0) # 1 or 0
+            y_true = 1 * (adj > 0)  # 1 or 0
             y_score = -dist
             ap = average_precision_score(y_true, y_score)
             APs.append(ap)
