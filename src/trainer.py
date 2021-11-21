@@ -33,6 +33,7 @@ class Trainer:
         config: Dict[str, Any],
         wandb_run: Optional["Run"] = None,
         device: torch.device = torch.device("cpu"),
+        burn_in_epochs: int = 10,
     ) -> None:
         self.model = model
         self.distance = distance
@@ -41,6 +42,7 @@ class Trainer:
         self.dataloader = dataloader
         self.wandb_run = wandb_run
         self.device = device
+        self.burn_in_epochs = burn_in_epochs
 
         loss_ftn = nn.CrossEntropyLoss()
 
@@ -58,6 +60,10 @@ class Trainer:
         for epoch in range(self.epochs):
             epoch_log = {}
             self.model.train()
+
+            if epoch < self.burn_in_epochs:
+                self.optimizer.burn_in()
+
             avg_loss = self.train_one_epoch(epoch)
             epoch_log["train_loss"] = avg_loss
 

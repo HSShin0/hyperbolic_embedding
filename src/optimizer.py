@@ -21,24 +21,31 @@ class PoincareSGD(torch.optim.Optimizer):
     """SGD Optimizer on Poincare disk."""
 
     # TODO: find typing hint for params
-    def __init__(self, params: Any, lr: float = 1e-3, eps: float = 1e-5) -> None:
+    def __init__(
+        self,
+        params: Any,
+        lr: float = 1e-3,
+        eps: float = 1e-5,
+        burn_in_lr_ratio: float = 1e-1,
+    ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr} - should be >= 0.0")
         if not 0.0 <= eps < 1e-1:
             raise ValueError(f"Invalid epsilon: {eps} - should be in [0, 0.1)")
         defaults = dict(lr=lr, eps=eps)
         super().__init__(params, defaults)
+        self.burn_in_lr_ratio = burn_in_lr_ratio
+        self.burn_in_state = False
 
     def step(self) -> None:
         for group in self.param_groups:
+            lr = group["lr"]
+            eps = group["eps"]
             for p in group["params"]:
-                lr = group["lr"]
-                eps = group["eps"]
                 if DEBUG:
                     if (
-                        torch.any(p.grad == torch.inf)
-                        or torch.any(p.grad == -torch.inf)
-                        or torch.any(p.grad == torch.nan)
+                        torch.any(torch.isinf(p.grad))
+                        or torch.any(torch.isnan(p.grad))
                     ):
                         import pdb;pdb.set_trace()
 
@@ -53,3 +60,21 @@ class PoincareSGD(torch.optim.Optimizer):
                 p.data[proj_mask] = p.data[proj_mask] / (
                     p_norm[proj_mask].unsqueeze(1) + eps
                 )
+        if self.burn_in_state:
+            self.escape_burn_in()
+
+    def burn_in(self) -> None:
+        for group in self.param_groups:
+            group["lr"] *= self.burn_in_lr_ratio
+            if DEBUG:
+                print(f'lr: {group["lr"]}')
+        self.burn_in_state = True
+
+    def escape_burn_in(self) -> None:
+        if not self.burn_in_state:
+            return
+        for group in self.param_groups:
+            group["lr"] /= self.burn_in_lr_ratio
+            if DEBUG:
+                print(f'lr: {group["lr"]}')
+        self.burn_in_state = False
