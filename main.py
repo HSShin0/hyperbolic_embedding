@@ -68,6 +68,16 @@ def get_args() -> argparse.Namespace:
         "--wlog-name", type=str, default="", help="Run ID in WanDB logger."
     )
     parser.add_argument("--use-gpu", action="store_true", default=False, help="Use GPU")
+    parser.add_argument(
+        "--init-lr", "-lr", type=float, default=0.01, help="Initial learning rate"
+    )
+    parser.add_argument(
+        "--burn-in-epochs",
+        "-be",
+        type=int,
+        default=10,
+        help="Number of `burn-in` epochs. Use smaller learning rate.",
+    )
     return parser.parse_args()
 
 
@@ -97,7 +107,9 @@ if __name__ == "__main__":
     distance = PoincareDistance()
     loss_ftn = nn.CrossEntropyLoss()
 
-    optimizer = PoincareSGD(model.parameters(), lr=0.001, eps=1e-5)
+    optimizer = PoincareSGD(
+        model.parameters(), lr=args.init_lr, eps=1e-5, burn_in_lr_ratio=0.1
+    )
     trainer = Trainer(
         model=model,
         distance=distance,
@@ -107,6 +119,6 @@ if __name__ == "__main__":
         config=vars(args),
         wandb_run=wandb_run,
         device=device,
+        burn_in_epochs=args.burn_in_epochs,
     )
-
     trainer.train()
