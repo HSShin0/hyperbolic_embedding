@@ -79,9 +79,10 @@ class PoincareDistance(torch.autograd.Function):
         x_sq = -beta + 1
         c_theta = (x_sq - 2 * torch.einsum("bi,bi->b", theta, x) + 1) / alpha ** 2
         c_x = -1 / alpha
-        # TODO: fix numerical unstable c_common because of (gamma == 1)
-        # caused by (theta == x)
-        c_common = 4 / (beta * torch.sqrt(gamma ** 2 - 1))
+        # fixed numerical unstable c_common because of (gamma == 1)
+        # caused by (theta == x) by adding `eps` without any logical reasoning.
+        # TODO: any better way for this? instead of adding `eps`?
+        c_common = 4 / (beta * torch.sqrt(gamma ** 2 - 1) + eps)
         dtheta = c_common.unsqueeze(1) * (
             c_theta.unsqueeze(1) * theta + c_x.unsqueeze(1) * x
         )  # (N, 2)
