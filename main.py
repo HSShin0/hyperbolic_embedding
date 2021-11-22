@@ -8,6 +8,7 @@ Ref:
  Representations"
 """
 
+import os
 import argparse
 
 import torch
@@ -91,6 +92,9 @@ if __name__ == "__main__":
         assert isinstance(
             wandb_run, wandb.sdk.wandb_run.Run
         ), "Failed initializing WanDB"
+        args.exp_root = args.exp_root.rstrip(os.path.sep)
+        # TODO: check `wlog_name` is available for using dirname
+        args.exp_root = os.path.join(os.path.dirname(args.exp_root), args.wlog_name)
     if args.use_gpu and torch.cuda.is_available():
         device = torch.device("cuda")
     else:
