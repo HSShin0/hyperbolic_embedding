@@ -8,14 +8,14 @@ Ref:
  Representations"
 """
 
-import os
 import argparse
+import os
 
 import torch
 import torch.nn as nn
-import wandb
 from torch.utils.data import DataLoader
 
+import wandb
 from src.data import TaxonomiesDataset
 from src.distance import PoincareDistance
 from src.models import Poincare

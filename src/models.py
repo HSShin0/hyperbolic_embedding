@@ -22,7 +22,7 @@ class Euclidean(BaseManifold):
         super().__init__()
         self.embed = nn.Embedding(num_embeddings, embedding_dim)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.LongTensor) -> torch.Tensor:
         return self.embed(x)
 
 
@@ -41,7 +41,7 @@ class Poincare(BaseManifold):
         self.embed.weight.data -= 1
         self.embed.weight.data *= 0.001
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.LongTensor) -> torch.Tensor:
         return self.embed(x)
 
 
@@ -49,7 +49,7 @@ class Lorentz(BaseManifold):
     def __init__(self, num_embeddings: int, embedding_dim: int) -> None:
         raise NotImplementedError
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.LongTensor) -> torch.Tensor:
         return self.embed(x)
 
 

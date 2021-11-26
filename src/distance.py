@@ -14,7 +14,7 @@ DEBUG = False
 
 
 class PoincareDistance(torch.autograd.Function):
-    """Distance in Poiincare disk."""
+    """Distance in Poincare disk."""
 
     # TODO: see implementation of `Function` for `ctx`
     @staticmethod
