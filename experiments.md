@@ -22,10 +22,11 @@
 - Want to minimize a (problem specific) loss function $\mathcal{L}(\Theta)$ with respect to the embedding $\Theta$.
 - More specifically, we consider the following loss function:
 $$\mathcal{L}(\Theta) = -\frac{1}{|S|} \sum_{u \in S}\sum_{v \in P(u)} \log\left(\frac{e^{-d(\mathbf{u}, \mathbf{v})}}{\sum_{v' \in N(u)} e^{-d(\mathbf{u}, \mathbf{v'})}}\right)$$
-- For each $u \in S$, $\mathbf{u}$ is the embedding of $u$ in the Poincaré disk.
-- $P(u)$ is the set of nodes directly connected with $u$.
-- $N(u) = S - P(u)$. Note that $u$ is also contained in $N(u)$. (In my opinion, it would be better to exclude $u$ itself from $N(u)$ for the better optimization. **CHECK**)
-- $d$ is the distance in the target space.
+- where
+  - For each $u \in S$, $\mathbf{u}$ is the embedding of $u$ in the Poincaré disk.
+  - $P(u)$ is the set of nodes directly connected with $u$.
+  - $N(u) = S - P(u)$. Note that $u$ is also contained in $N(u)$. (In my opinion, it would be better to exclude $u$ itself from $N(u)$ for the better optimization. **CHECK**)
+  - $d$ is the distance in the target space.
 
 ### Riemannian Optimization
 - The above formulation is an optimization problem on the Riemannian space $(\mathcal{B}^d, g)$, **not** on the Euclidean space.
@@ -39,6 +40,45 @@ $$\mathcal{L}(\Theta) = -\frac{1}{|S|} \sum_{u \in S}\sum_{v \in P(u)} \log\left
 - In the Poincaré model case:
   - Since the metric tensor is the Euclidean metric with scaling factor $\left(\frac{2}{1 - |\mathbf{x}|^2}\right)^2$, we have $\nabla^g f = \left(\frac{1 - |\mathbf{x}|^2}{2}\right)^2 \nabla f$.
   - Use retraction $R_p : T_p \mathbb{B}^d \to \mathbb{B}^d$ defined by $R_p(\mathbf{v}) = p + \mathbf{v}$. Note that the operation $+$ may not be well-defined in general manifold case.
+
+
+
+
+
+
+### Key modules in Code
+
+#### `src/distance.py`: Distance Function on Poincaré Disk
+##### `PoincareDistance` class
+Note that the loss function can be computed from the distance terms (between every two embedded points).
+This class is for defining distance function on Poincaré disk with *"new"* autograd.
+The Poincaré distance between two points $\mathbf{u}, \mathbf{v} \in \mathbb{B}^d$ is as follows:
+$$d(\mathbf{u}, \mathbf{v}) = \text{arccosh}\left(1 + 2 \frac{|\mathbf{u}-\mathbf{v}|^2}{(1 - |\mathbf{u}|^2)(1 - |\mathbf{v}|^2)}\right)$$
+
+- The `forward` method computes distance (for Poincaré metric) between given two points.
+$$\mathbb{B}^d \times \mathbb{B}^d \to \mathbb{R}$$
+$$(\mathbf{u}, \mathbf{v}) \mapsto d(\mathbf{u}, \mathbf{v})$$
+Note that the distance formula may give some numerically instable results if any point $\mathbf{u}$ or $\mathbf{v}$ is near the boundary of the Poincaré disk.
+To remedy this, we clamp $|\mathbf{u}|^2$ and $|\mathbf{v}|^2$ into $[0, 1 - \epsilon)$ for some small $\epsilon > 0$.
+
+- The `backward` method computes Euclidean gradient of the distance function. Denoting $z = d(\mathbf{u}, \mathbf{v})$ (and let $f$ be a given loss function),
+$$\frac{df}{dz} \mapsto \left( \frac{df}{d\mathbf{u}}, \frac{df}{d\mathbf{v}} \right)$$
+
+**Remark.**
+The ordinary *autograd* of PyTorch also computes the Euclidean gradient.
+However, the *autograd* and the above *backward* implementation might gives different values for the points near the boundary of the Poincaré disk.
+This is because *autograd* of clamped value vanishes.
+
+
+#### `src/optimizer.py`: Riemannian Gradient Decent Optimizer
+##### `PoincareSGD` class
+This class is for updating embedding vectors using Riemannian gradient decent algorithm on Poincaré disk.
+Assuming that we have Euclidean gradient $\nabla \mathcal{L}$ from ordinary backpropagation (by calling `backward` method),
+this optimizer does:
+1. Compute Riemannian gradient $\nabla^g \mathcal{L}$ on the Poincaré disk from the Euclidean gradient $\nabla \mathcal{L}$.
+1. Compute retraction $\mathbf{R}(-\lambda\nabla^g \mathcal{L})$.
+1. Project the retraction point $\mathbf{x}$ to $\frac{\mathbf{x}}{|\mathbf{x}| + \epsilon}$ if $|\mathbf{x}| >= 1$ (outside of the Poincaré disk).
+1. Update the embedding point to the above retracted (and projected) point.
 
 
 
@@ -71,10 +111,10 @@ I only measured Mean Average Precision of the reconstruction.
   - Use more than 20 negative samples: Using 50 negative samples gives the best score.
 - Training process is highly unstable.
   - "U"-shape of training loss
-  - Have to check numerical unstability (maybe train loss grows as the embedded vectors going closer to the boundary of the Poincaré disk ?)
+  - Have to check numerical instability (maybe the train loss increases as the embedded vectors going closer to the boundary of the Poincaré disk ?)
 
 ### Discussion
 - (Possible) Defects:
   - Negative Sampling
     - When the number of negative nodes $N(u)$ is smaller than the negative samples, sampled from $N(u)$ with "replace".
-    - $u$ is included in the pool $N(u)$. 
+    - $u$ is included in the pool $N(u)$.
