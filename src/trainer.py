@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from tqdm import tqdm
 
+import wandb
+
 if TYPE_CHECKING:
     from src.optimizer import PoincareSGD
     from src.distance import PoincareDistance
@@ -73,6 +75,10 @@ class Trainer:
                 for k, v in scores.items():
                     print(f"{k}:\t{v:.2f}")
                 epoch_log.update(scores)
+                # log distribution of l2 norms of embedded vectors
+                if self.wandb_run:
+                    l2_norms = self.get_embedding_l2_norms()
+                    epoch_log.update({"l2_norms": wandb.Histogram(l2_norms)})
 
                 score = scores["mAP"]  # or Use negative "mean_rank"
                 if score > self.best_score:
@@ -160,7 +166,12 @@ class Trainer:
             APs.append(ap)
         total_aps = torch.Tensor(APs)
         # TODO: implement computation of Mean Rank
-        return {"mAP": total_aps.mean().item(), "mean_rank": 1}
+        return {"mAP": total_aps.mean().item(), "mean_rank": -1}
+
+    @torch.no_grad()
+    def get_embedding_l2_norms(self) -> torch.Tensor:
+        W = self.model.embed.weight
+        return torch.sqrt((W ** 2).sum(-1))
 
     def save_checkpoint(
         self, savepath: str, additional_info: Optional[Dict[str, Any]] = None
